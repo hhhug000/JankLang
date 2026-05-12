@@ -182,6 +182,8 @@ def repl():
 
 def runline(line):
     line = line.strip()
+    if line[0] == "#":
+        return
     parts = line.split(" ", 1)
     command = parts[0].lower()
     try:
