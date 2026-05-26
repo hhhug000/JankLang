@@ -1,6 +1,35 @@
 import sys
 
 variables = {}
+functions = {}
+
+
+def call_function(name, arg_values):
+    if name not in functions:
+        return ""
+    params, body_lines = functions[name]
+    global variables
+    backup_vars = variables
+    # create local scope that starts with a copy of globals
+    local_vars = backup_vars.copy()
+    # bind parameters
+    for i, p in enumerate(params):
+        if i < len(arg_values):
+            local_vars[p] = arg_values[i]
+        else:
+            local_vars[p] = ""
+
+    variables = local_vars
+    ret = ""
+    for line in body_lines:
+        runline(line)
+        if '_return' in variables:
+            ret = variables.pop('_return')
+            break
+
+    # restore globals
+    variables = backup_vars
+    return ret
 
 
 def expression(exprString):
@@ -12,7 +41,8 @@ def expression(exprString):
         beforeBracket = exprString[:openBracket]
         insideBracket = exprString[openBracket + 1:closeBracket]
         afterBracket = exprString[closeBracket + 1:]
-        
+        beforeBracket = beforeBracket.strip()
+
         if beforeBracket == "tonumber":
             innerValue = expression(insideBracket)
             try:
@@ -25,8 +55,47 @@ def expression(exprString):
             bracketResult = str(result)
             newExprString = bracketResult + afterBracket
         else:
-            bracketResult = expression(insideBracket)
-            newExprString = beforeBracket + bracketResult + afterBracket
+            # function call support
+            if beforeBracket in functions:
+                # split args, evaluate each, call function
+                def split_args(s):
+                    args = []
+                    cur = ""
+                    depth = 0
+                    in_str = False
+                    i = 0
+                    while i < len(s):
+                        c = s[i]
+                        if c == '"':
+                            in_str = not in_str
+                            cur += c
+                        elif not in_str:
+                            if c == '(':
+                                depth += 1
+                                cur += c
+                            elif c == ')':
+                                depth -= 1
+                                cur += c
+                            elif c == ',' and depth == 0:
+                                args.append(cur)
+                                cur = ""
+                            else:
+                                cur += c
+                        else:
+                            cur += c
+                        i += 1
+                    if cur.strip() != "":
+                        args.append(cur)
+                    return args
+
+                arg_strs = split_args(insideBracket)
+                evaluated_args = [expression(a.strip()) for a in arg_strs if a.strip() != ""]
+                # call the function
+                bracketResult = call_function(beforeBracket, evaluated_args)
+                newExprString = str(bracketResult) + afterBracket
+            else:
+                bracketResult = expression(insideBracket)
+                newExprString = beforeBracket + bracketResult + afterBracket
         
         exprString = newExprString.strip()
         
@@ -125,6 +194,9 @@ def file(text):
     i = 0
     while i < len(lines):
         line = lines[i]
+        if line.strip() == "":
+            i += 1
+            continue
         if line.strip().lower().startswith("if "):
             conditionExpr = line.strip()[3:]
             condResult = condition(conditionExpr)
@@ -146,6 +218,26 @@ def file(text):
             if condResult:
                 block_text = "\n".join(block_lines)
                 file(block_text)
+        elif line.strip().lower().startswith("func "):
+            header = line.strip()[5:]
+            name = header
+            params = []
+            if "(" in header and ")" in header:
+                pstart = header.find("(")
+                pend = header.find(")")
+                name = header[:pstart].strip()
+                params = [p.strip() for p in header[pstart+1:pend].split(",") if p.strip() != ""]
+            i += 1
+            body_lines = []
+            while i < len(lines):
+                cur = lines[i]
+                if cur.strip().lower() == "endfunc":
+                    i += 1
+                    break
+                else:
+                    body_lines.append(cur)
+                i += 1
+            functions[name] = (params, body_lines)
         elif line.strip().lower() == "endif":
             i += 1
         else:
@@ -175,6 +267,22 @@ def repl():
                 if condResult:
                     block_text = "\n".join(block_lines)
                     file(block_text)
+            elif line.strip().lower().startswith("func "):
+                header = line.strip()[5:]
+                name = header
+                params = []
+                if "(" in header and ")" in header:
+                    pstart = header.find("(")
+                    pend = header.find(")")
+                    name = header[:pstart].strip()
+                    params = [p.strip() for p in header[pstart+1:pend].split(",") if p.strip() != ""]
+                body_lines = []
+                while True:
+                    l = input("... ")
+                    if l.strip().lower() == "endfunc":
+                        break
+                    body_lines.append(l)
+                functions[name] = (params, body_lines)
             else:
                 runline(line)
         except EOFError:
@@ -182,7 +290,7 @@ def repl():
 
 def runline(line):
     line = line.strip()
-    if line[0] == "#":
+    if line == "" or line[0] == "#":
         return
     parts = line.split(" ", 1)
     command = parts[0].lower()
@@ -207,6 +315,13 @@ def runline(line):
                 result = expression(valueExpr)
                 inputValue = input(result)
                 variables[varName] = inputValue
+            case "return":
+                if len(parts) > 1:
+                    result = expression(parts[1])
+                else:
+                    result = ""
+                variables['_return'] = result
+                return
             case "exit":
                 exit()
             case _:
