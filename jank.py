@@ -207,26 +207,55 @@ def file(text):
             i += 1
             continue
         if line.strip().lower().startswith("if "):
-            conditionExpr = line.strip()[3:]
-            condResult = condition(conditionExpr)
+            # collect full if/elif/else/.../endif group including inner nested ifs
+            header = line.strip()
             i += 1
-            block_lines = []
+            blocks = []  # list of (cond_or_None, lines)
+            current_cond = header[3:]
+            current_block = []
+            blocks.append((current_cond, current_block))
             nesting_depth = 1
             while i < len(lines) and nesting_depth > 0:
                 current_line = lines[i]
-                if current_line.strip().lower().startswith("if "):
+                stripped = current_line.strip()
+                low = stripped.lower()
+                if low.startswith("if "):
                     nesting_depth += 1
-                    block_lines.append(current_line)
-                elif current_line.strip().lower() == "endif":
+                    current_block.append(current_line)
+                elif low == "endif":
                     nesting_depth -= 1
-                    if nesting_depth > 0:
-                        block_lines.append(current_line)
+                    if nesting_depth == 0:
+                        i += 1
+                        break
+                    else:
+                        current_block.append(current_line)
+                elif low.startswith("elif ") and nesting_depth == 1:
+                    # start new elif block
+                    current_cond = current_line.strip()[5:]
+                    current_block = []
+                    blocks.append((current_cond, current_block))
+                elif low == "else" and nesting_depth == 1:
+                    current_cond = None
+                    current_block = []
+                    blocks.append((current_cond, current_block))
                 else:
-                    block_lines.append(current_line)
+                    current_block.append(current_line)
                 i += 1
-            if condResult:
-                block_text = "\n".join(block_lines)
-                file(block_text)
+
+            # evaluate blocks in order
+            executed = False
+            for cond, b_lines in blocks:
+                if cond is None:
+                    # else
+                    file("\n".join(b_lines))
+                    executed = True
+                    break
+                else:
+                    if condition(cond):
+                        file("\n".join(b_lines))
+                        executed = True
+                        break
+            # if none matched, do nothing
         elif line.strip().lower().startswith("func "):
             header = line.strip()[5:]
             name = header
@@ -258,8 +287,7 @@ def repl():
         try:
             line = input("jank> ")
             if line.strip().lower().startswith("if "):
-                conditionExpr = line.strip()[3:]
-                condResult = condition(conditionExpr)
+                header = line.strip()
                 block_lines = []
                 nesting_depth = 1
                 while nesting_depth > 0:
@@ -273,9 +301,9 @@ def repl():
                             block_lines.append(line)
                     else:
                         block_lines.append(line)
-                if condResult:
-                    block_text = "\n".join(block_lines)
-                    file(block_text)
+                # reconstruct full conditional group and let file() handle elif/else
+                full_text = header + "\n" + "\n".join(block_lines) + "\nendif"
+                file(full_text)
             elif line.strip().lower().startswith("func "):
                 header = line.strip()[5:]
                 name = header
