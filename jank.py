@@ -104,7 +104,7 @@ def expression(exprString):
                 newExprString = str(bracketResult) + afterBracket
             else:
                 bracketResult = expression(insideBracket)
-                newExprString = beforeBracket + bracketResult + afterBracket
+                newExprString = beforeBracket + str(bracketResult) + afterBracket
         
         exprString = newExprString.strip()
         
@@ -118,18 +118,27 @@ def expression(exprString):
         parts.append(strippedPart)
     values = []
     for part in parts:
-        firstChar = part[0]
-        if firstChar == '"':
-            value = part[1:-1]
+        if part == "":
+            value = ""
         else:
-            try:
-                float(part)
-                if '.' in part:
-                    value = float(part)
+            firstChar = part[0]
+            if firstChar == '"' and part.endswith('"'):
+                value = part[1:-1]
+            else:
+                low = part.lower()
+                if low == 'true':
+                    value = True
+                elif low == 'false':
+                    value = False
                 else:
-                    value = int(part)
-            except ValueError:
-                value = variables.get(part, "")
+                    try:
+                        float(part)
+                        if '.' in part:
+                            value = float(part)
+                        else:
+                            value = int(part)
+                    except ValueError:
+                        value = variables.get(part, "")
         values.append(value)
     isAllNumbers = True
     for v in values:
@@ -143,12 +152,66 @@ def expression(exprString):
         for v in values:
             resultParts.append(str(v))
         result = "".join(resultParts)
-    finalResult = str(result)
-    return finalResult
+    return result
 
 
 def condition(condString):
     condString = condString.strip()
+    lowcs = condString.lower()
+    if lowcs == 'true':
+        return True
+    if lowcs == 'false':
+        return False
+
+    # handle not / and / or with proper parentheses awareness
+    # not
+    if lowcs.startswith('not '):
+        return not condition(condString[4:])
+
+    # split top-level or
+    def split_top_level(s, sep):
+        parts = []
+        cur = ''
+        depth = 0
+        in_str = False
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if c == '"':
+                in_str = not in_str
+                cur += c
+            elif not in_str:
+                if c == '(':
+                    depth += 1
+                    cur += c
+                elif c == ')':
+                    depth -= 1
+                    cur += c
+                elif s[i:i+len(sep)].lower() == sep and depth == 0:
+                    parts.append(cur)
+                    cur = ''
+                    i += len(sep) - 1
+                else:
+                    cur += c
+            else:
+                cur += c
+            i += 1
+        parts.append(cur)
+        return parts
+
+    or_parts = split_top_level(condString, ' or ')
+    if len(or_parts) > 1:
+        for p in or_parts:
+            if condition(p):
+                return True
+        return False
+
+    and_parts = split_top_level(condString, ' and ')
+    if len(and_parts) > 1:
+        for p in and_parts:
+            if not condition(p):
+                return False
+        return True
     
     openBracket = condString.find("(")
     if openBracket != -1:
