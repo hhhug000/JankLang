@@ -54,6 +54,15 @@ def expression(exprString):
                 result = 0
             bracketResult = str(result)
             newExprString = bracketResult + afterBracket
+        elif beforeBracket == "readfile":
+            inner = expression(insideBracket)
+            try:
+                with open(str(inner), 'r', encoding='utf-8') as _f:
+                    data = _f.read()
+            except Exception:
+                data = ""
+            bracketResult = data
+            newExprString = bracketResult + afterBracket
         else:
             # function call support
             if beforeBracket in functions:
@@ -315,6 +324,61 @@ def runline(line):
                 result = expression(valueExpr)
                 inputValue = input(result)
                 variables[varName] = inputValue
+            case "write":
+                expr = parts[1]
+                split = expr.split("=", 1)
+                if len(split) < 2:
+                    print("Usage: write filename = expression")
+                else:
+                    filenameExpr = split[0].strip()
+                    valueExpr = split[1].strip()
+                    filename = expression(filenameExpr)
+                    content = expression(valueExpr)
+                    try:
+                        with open(str(filename), 'w', encoding='utf-8') as _f:
+                            _f.write(str(content))
+                    except Exception as e:
+                        print(f"Error writing file: {e}")
+            case "append":
+                expr = parts[1]
+                split = expr.split("=", 1)
+                if len(split) < 2:
+                    print("Usage: append filename = expression")
+                else:
+                    filenameExpr = split[0].strip()
+                    valueExpr = split[1].strip()
+                    filename = expression(filenameExpr)
+                    content = expression(valueExpr)
+                    try:
+                        with open(str(filename), 'a', encoding='utf-8') as _f:
+                            _f.write(str(content))
+                    except Exception as e:
+                        print(f"Error appending file: {e}")
+            case "read":
+                expr = parts[1]
+                # support: read filename as var  OR read filename var
+                e_lower = expr.lower()
+                if " as " in e_lower:
+                    idx = e_lower.rfind(" as ")
+                    filenamePart = expr[:idx]
+                    varName = expr[idx+4:].strip()
+                else:
+                    parts2 = expr.rsplit(" ", 1)
+                    if len(parts2) == 2:
+                        filenamePart, varName = parts2[0], parts2[1]
+                    else:
+                        print("Usage: read filename as var")
+                        filenamePart = None
+                        varName = None
+                if filenamePart and varName:
+                    filename = expression(filenamePart.strip())
+                    try:
+                        with open(str(filename), 'r', encoding='utf-8') as _f:
+                            data = _f.read()
+                    except Exception as e:
+                        data = ""
+                        print(f"Error reading file: {e}")
+                    variables[varName] = data
             case "return":
                 if len(parts) > 1:
                     result = expression(parts[1])
