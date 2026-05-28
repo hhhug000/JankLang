@@ -2,6 +2,8 @@ import sys
 
 variables = {}
 functions = {}
+MAX_ITERATIONS = 0
+loop_depth = 0
 
 
 def call_function(name, arg_values):
@@ -319,6 +321,192 @@ def file(text):
                         executed = True
                         break
             # if none matched, do nothing
+        elif line.strip().lower().startswith("while "):
+            header = line.strip()
+            i += 1
+            block_lines = []
+            nesting_depth = 1
+            while i < len(lines) and nesting_depth > 0:
+                cur = lines[i]
+                low = cur.strip().lower()
+                if low.startswith("while "):
+                    nesting_depth += 1
+                    block_lines.append(cur)
+                elif low == "endwhile":
+                    nesting_depth -= 1
+                    if nesting_depth > 0:
+                        block_lines.append(cur)
+                else:
+                    block_lines.append(cur)
+                i += 1
+            # execute loop with loop-depth, break/continue and iteration limits
+            cond = header[6:]
+            global loop_depth
+            loop_depth += 1
+            this_depth = loop_depth
+            iter_count = 0
+            try:
+                while condition(cond):
+                    iter_count += 1
+                    if MAX_ITERATIONS > 0 and iter_count > MAX_ITERATIONS:
+                        print(f"Loop iteration limit reached ({MAX_ITERATIONS}), breaking")
+                        break
+                    file("\n".join(block_lines))
+                    # handle continue/break for this loop depth
+                    bdepth = variables.pop('_break_depth', None)
+                    cdepth = variables.pop('_continue_depth', None)
+                    if bdepth == this_depth:
+                        break
+                    if cdepth == this_depth:
+                        continue
+            finally:
+                loop_depth -= 1
+        elif line.strip().lower().startswith("for "):
+            header = line.strip()[4:]
+            # parse: var = start to end [step N]
+            # simple parser
+            i += 1
+            block_lines = []
+            nesting_depth = 1
+            while i < len(lines) and nesting_depth > 0:
+                cur = lines[i]
+                low = cur.strip().lower()
+                if low.startswith("for "):
+                    nesting_depth += 1
+                    block_lines.append(cur)
+                elif low == "endfor":
+                    nesting_depth -= 1
+                    if nesting_depth > 0:
+                        block_lines.append(cur)
+                else:
+                    block_lines.append(cur)
+                i += 1
+            # parse header into var, start, end, step
+            varName = None
+            startExpr = None
+            endExpr = None
+            stepExpr = None
+            if "=" in header and " to " in header.lower():
+                left, right = header.split("=", 1)
+                varName = left.strip()
+                right = right.strip()
+                # find ' to ' case-insensitive
+                lowr = right.lower()
+                if " to " in lowr:
+                    idx = lowr.find(" to ")
+                    startExpr = right[:idx].strip()
+                    rest = right[idx+4:].strip()
+                    # optional step
+                    lowrest = rest.lower()
+                    if " step " in lowrest:
+                        sidx = lowrest.find(" step ")
+                        endExpr = rest[:sidx].strip()
+                        stepExpr = rest[sidx+6:].strip()
+                    else:
+                        endExpr = rest
+            # evaluate numeric bounds
+            if varName and startExpr is not None and endExpr is not None:
+                try:
+                    startVal = expression(startExpr)
+                    endVal = expression(endExpr)
+                    stepVal = expression(stepExpr) if stepExpr is not None else 1
+                    startVal = int(startVal)
+                    endVal = int(endVal)
+                    stepVal = int(stepVal)
+                except Exception:
+                    startVal = 0
+                    endVal = -1
+                    stepVal = 1
+                # iterate
+                if stepVal == 0:
+                    stepVal = 1
+                if (stepVal > 0 and startVal <= endVal) or (stepVal < 0 and startVal >= endVal):
+                    global loop_depth
+                    loop_depth += 1
+                    this_depth = loop_depth
+                    iter_count = 0
+                    v = startVal
+                    try:
+                        while (stepVal > 0 and v <= endVal) or (stepVal < 0 and v >= endVal):
+                            iter_count += 1
+                            if MAX_ITERATIONS > 0 and iter_count > MAX_ITERATIONS:
+                                print(f"Loop iteration limit reached ({MAX_ITERATIONS}), breaking")
+                                break
+                            variables[varName] = v
+                            file("\n".join(block_lines))
+                            bdepth = variables.pop('_break_depth', None)
+                            cdepth = variables.pop('_continue_depth', None)
+                            if bdepth == this_depth:
+                                break
+                            if cdepth == this_depth:
+                                v += stepVal
+                                continue
+                            v += stepVal
+                    finally:
+                        loop_depth -= 1
+                        # cleanup any continue/break leftover for this depth
+                        variables.pop('_break_depth', None)
+                        variables.pop('_continue_depth', None)
+                
+                
+        elif line.strip().lower().startswith("foreach "):
+            header = line.strip()[8:]
+            i += 1
+            block_lines = []
+            nesting_depth = 1
+            while i < len(lines) and nesting_depth > 0:
+                cur = lines[i]
+                low = cur.strip().lower()
+                if low.startswith("foreach "):
+                    nesting_depth += 1
+                    block_lines.append(cur)
+                elif low == "endforeach":
+                    nesting_depth -= 1
+                    if nesting_depth > 0:
+                        block_lines.append(cur)
+                else:
+                    block_lines.append(cur)
+                i += 1
+            # parse header: var in expr
+            varName = None
+            exprPart = None
+            if " in " in header.lower():
+                idx = header.lower().find(" in ")
+                varName = header[:idx].strip()
+                exprPart = header[idx+4:].strip()
+            if varName and exprPart is not None:
+                collection = expression(exprPart)
+                items = []
+                if isinstance(collection, (list, tuple)):
+                    items = list(collection)
+                elif isinstance(collection, int):
+                    items = list(range(collection))
+                else:
+                    s = str(collection)
+                    if "," in s:
+                        items = [p.strip() for p in s.split(",")]
+                    else:
+                        items = list(s)
+                global loop_depth
+                loop_depth += 1
+                this_depth = loop_depth
+                iter_count = 0
+                try:
+                    for it in items:
+                        iter_count += 1
+                        if MAX_ITERATIONS > 0 and iter_count > MAX_ITERATIONS:
+                            print(f"Loop iteration limit reached ({MAX_ITERATIONS}), breaking")
+                            break
+                        variables[varName] = it
+                        file("\n".join(block_lines))
+                        bdepth = variables.pop('_break_depth', None)
+                        cdepth = variables.pop('_continue_depth', None)
+                        if bdepth == this_depth:
+                            break
+                        if cdepth == this_depth:
+                            continue
+                finally:
+                    loop_depth -= 1
         elif line.strip().lower().startswith("func "):
             header = line.strip()[5:]
             name = header
@@ -367,6 +555,40 @@ def repl():
                 # reconstruct full conditional group and let file() handle elif/else
                 full_text = header + "\n" + "\n".join(block_lines) + "\nendif"
                 file(full_text)
+            elif line.strip().lower().startswith("while "):
+                header = line.strip()
+                block_lines = []
+                nesting_depth = 1
+                while nesting_depth > 0:
+                    l = input("... ")
+                    if l.strip().lower().startswith("while "):
+                        nesting_depth += 1
+                        block_lines.append(l)
+                    elif l.strip().lower() == "endwhile":
+                        nesting_depth -= 1
+                        if nesting_depth > 0:
+                            block_lines.append(l)
+                    else:
+                        block_lines.append(l)
+                full_text = header + "\n" + "\n".join(block_lines) + "\nendwhile"
+                file(full_text)
+            elif line.strip().lower().startswith("for "):
+                header = line.strip()
+                block_lines = []
+                nesting_depth = 1
+                while nesting_depth > 0:
+                    l = input("... ")
+                    if l.strip().lower().startswith("for "):
+                        nesting_depth += 1
+                        block_lines.append(l)
+                    elif l.strip().lower() == "endfor":
+                        nesting_depth -= 1
+                        if nesting_depth > 0:
+                            block_lines.append(l)
+                    else:
+                        block_lines.append(l)
+                full_text = header + "\n" + "\n".join(block_lines) + "\nendfor"
+                file(full_text)
             elif line.strip().lower().startswith("func "):
                 header = line.strip()[5:]
                 name = header
@@ -406,7 +628,21 @@ def runline(line):
                 varName = split[0].strip()
                 valueExpr = split[1].strip()
                 result = expression(valueExpr)
-                variables[varName] = result
+                # allow changing MAX_ITERATIONS from scripts/REPL using:
+                # set max_iterations = N  (0 or empty means unlimited)
+                lname = varName.lower()
+                if lname in ("max_iterations", "maxiterations", "max-iterations"):
+                    try:
+                        if isinstance(result, str) and result.strip() == "":
+                            newval = 0
+                        else:
+                            newval = int(float(result))
+                    except Exception:
+                        newval = 0
+                    global MAX_ITERATIONS
+                    MAX_ITERATIONS = newval
+                else:
+                    variables[varName] = result
             case "input":
                 expr = parts[1]
                 split = expr.split("=", 1)
@@ -470,6 +706,13 @@ def runline(line):
                         data = ""
                         print(f"Error reading file: {e}")
                     variables[varName] = data
+            case "break":
+                # signal break for current loop depth
+                variables['_break_depth'] = loop_depth
+                return
+            case "continue":
+                variables['_continue_depth'] = loop_depth
+                return
             case "return":
                 if len(parts) > 1:
                     result = expression(parts[1])
