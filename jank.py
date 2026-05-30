@@ -341,7 +341,7 @@ def file(text):
                 i += 1
             # execute loop with loop-depth, break/continue and iteration limits
             cond = header[6:]
-            global loop_depth
+            
             loop_depth += 1
             this_depth = loop_depth
             iter_count = 0
@@ -421,7 +421,7 @@ def file(text):
                 if stepVal == 0:
                     stepVal = 1
                 if (stepVal > 0 and startVal <= endVal) or (stepVal < 0 and startVal >= endVal):
-                    global loop_depth
+                    
                     loop_depth += 1
                     this_depth = loop_depth
                     iter_count = 0
@@ -487,7 +487,7 @@ def file(text):
                         items = [p.strip() for p in s.split(",")]
                     else:
                         items = list(s)
-                global loop_depth
+                
                 loop_depth += 1
                 this_depth = loop_depth
                 iter_count = 0

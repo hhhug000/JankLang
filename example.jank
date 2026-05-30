@@ -1,0 +1,12 @@
+input name = "Hello, What is your name? > "
+input age = "And how old are you? > "
+
+age = tonumber(age)
+
+if age >= 18
+    output "Hello " + name + ", you are an adult"
+elif age >= 13
+    output "Hello " + name + ", you are a teenager"
+elif age <= 12:
+    output "Hello " + name + ", you are a child"
+endif
