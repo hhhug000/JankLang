@@ -1,9 +1,11 @@
 import sys
+import os
 
 variables = {}
 functions = {}
 MAX_ITERATIONS = 0
 loop_depth = 0
+imported_files = set()
 
 
 def call_function(name, arg_values):
@@ -533,6 +535,29 @@ def file(text):
             runline(line)
             i += 1
         
+def import_file(filename):
+    """Import and execute a Jank file, making its functions and variables available."""
+    global imported_files
+    
+    # Resolve absolute path to prevent circular imports
+    abs_path = os.path.abspath(filename)
+    
+    # Prevent circular imports
+    if abs_path in imported_files:
+        return
+    
+    imported_files.add(abs_path)
+    
+    try:
+        with open(abs_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+            file(text)
+    except FileNotFoundError:
+        print(f"Error: Import file not found: {filename}")
+    except Exception as e:
+        print(f"Error importing file '{filename}': {e}")
+
+
 def repl():
     while True:
         try:
@@ -722,6 +747,13 @@ def runline(line):
                 return
             case "exit":
                 exit()
+            case "import":
+                if len(parts) < 2:
+                    print("Usage: import filename")
+                else:
+                    filename_expr = parts[1]
+                    filename = expression(filename_expr)
+                    import_file(str(filename))
             case _:
                 print(f"Unknown command: {command}")
                 
